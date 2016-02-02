@@ -1,0 +1,106 @@
+import theano
+import theano.tensor as T
+from OkapiV2.Core import Model, Branch
+from OkapiV2.Layers.Basic import FullyConnected
+from OkapiV2.Layers.Activations import ActivationLayer, PReLULayer
+from OkapiV2.Layers.Convolutional import Convolutional, MaxPooling
+from OkapiV2 import Activations, Datasets, Losses, Optimizers
+import numpy as np
+
+X_train, y_train, X_val, y_val, X_test, y_test = Datasets.load_mnist()
+X_obs, y_obs = X_train[0:10000], y_train[0:10000]
+X_reward = []
+X_reward.append(np.zeros((X_obs.shape[0] * 10, X_obs.shape[1], X_obs.shape[2], X_obs.shape[3])))
+X_reward.append(np.zeros((X_obs.shape[0] * 10, y_obs.shape[1])))
+y_obs_all = np.zeros((X_obs.shape[0] * 10, y_obs.shape[1]))
+y_reward = np.zeros((X_obs.shape[0] * 10, 1))
+
+print('Compiling reward...')
+y_hat = T.matrix(dtype='float32')
+y = T.matrix(dtype='float32')
+crossentropy = T.nnet.categorical_crossentropy(y_hat, y)
+preds = T.argmax(y_hat, axis=1)
+true = T.argmax(y, axis=1)
+actual_reward = T.switch(T.eq(preds, true), 1,  0)
+reward = theano.function([y_hat, y], actual_reward)
+print('Expanding data...')
+
+'''def reward(y_hat, y):
+    reward = np.zeros((y_hat.shape[0], 1))
+    for i in range(y_hat.shape[0]):
+        reward[i, :] = 1 - min(np.sum(np.nan_to_num(-y * np.log(y_hat) - (1 - y) * np.log(1 - y_hat))), 1)
+    return reward'''
+
+for i in range(len(y_obs)):
+    for j in range(10):
+        row = i * 10 + j
+        action = np.zeros((1, 10))
+        action += 1e-7
+        action[:, j] = 1
+        X_reward[0][row, :, :, :] = X_obs[i, :, :, :]
+        X_reward[1][row, :] = action.flatten(1)
+        y_reward[row, :] = reward(action.astype('float32'), y_obs[[i]].astype('float32'))
+        if i % 1000 is 0 and j is 0:
+            print('{}/{}: {}'.format(row, y_reward.shape[0], y_reward[row, :]))
+        y_obs_all[row, :] = y_obs[i, :]
+
+dropout_p = 0.2
+num_filters = 32
+filter_size = 3
+pool_size = 2
+num_classes = 10
+pad = True
+
+state_branch = Branch()
+state_branch.add_layer(Convolutional(num_filters, filter_size, filter_size, pad=pad))
+state_branch.add_layer(PReLULayer())
+state_branch.add_layer(MaxPooling(pool_size, pool_size))
+state_branch.add_layer(Convolutional(num_filters, filter_size, filter_size, pad=pad))
+state_branch.add_layer(PReLULayer())
+state_branch.add_layer(MaxPooling(pool_size, pool_size))
+# state_branch.add_layer(Dropout(dropout_p))
+state_branch.add_layer(FullyConnected((100, 1, 1, 1)))
+state_branch.add_layer(ActivationLayer(Activations.tanh))
+state_branch.add_input(X_reward[0])
+
+action_branch = Branch()
+action_branch.add_layer(FullyConnected((100, 1, 1, 1)))
+action_branch.add_layer(PReLULayer())
+action_branch.add_input(X_reward[1])
+
+tree = Branch()
+tree.add_layer(FullyConnected((512, 1, 1, 1)))
+tree.add_layer(PReLULayer())
+tree.add_layer(FullyConnected((512, 1, 1, 1)))
+tree.add_layer(PReLULayer())
+tree.add_layer(FullyConnected((512, 1, 1, 1)))
+tree.add_layer(PReLULayer())
+tree.add_layer(FullyConnected())
+tree.add_layer(ActivationLayer(Activations.tanh))
+tree.add_input(X_reward[0])
+tree.add_input(X_reward[1])
+
+model = Model()
+model.set_tree(tree)
+model.set_loss(Losses.MeanSquared())
+model.set_optimizer(Optimizers.RMSprop(learning_rate=0.00005))
+
+model.train(X_reward, y_reward, 24)
+print(model.predict([X_train[[0]], y_train[0]]))
+print(model.predict([X_train[[0]], np.asarray([1, 0, 0, 0, 0, 0, 0, 0, 0, 0])]))
+# prediction = model.predict_dream([X_test, None], X_reward[1][[0]].shape)
+reinforce_index = 1000
+for i in range(10):
+    test_accuracy, test_preds = model.get_dream_accuracy([X_test, None], y_test)
+    print('Test Accuracy: {}%'.format(test_accuracy))
+    accuracy, preds = model.get_dream_accuracy([X_train[:reinforce_index], None], y_train[:reinforce_index])
+    print('Accuracy: {}%'.format(accuracy))
+    preds_reward = reward(preds.reshape(preds.shape[0], preds.shape[1]).astype('float32'),
+            y_train[:reinforce_index].reshape(preds.shape[0], preds.shape[1]).astype('float32'))
+    X_reward[0] = np.append(X_reward[0], X_train[:reinforce_index], axis=0)
+    X_reward[1] = np.append(X_reward[1], preds, axis=0)
+    y_reward = np.append(y_reward, preds_reward.reshape(preds_reward.shape[0], 1), axis=0)
+    # X_reward[0] = X_obs[:reinforce_index]
+    # X_reward[1] = preds
+    # y_reward = preds_reward.reshape(preds_reward.shape[0], 1)
+    model.train(X_reward, y_reward, 24)
