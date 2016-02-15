@@ -21,8 +21,8 @@ model.set_tree(tree)
 model.set_optimizer(Optimizers.RMSprop(learning_rate=0.00005))
 
 index = 60000
-model.train([X_train[:index, :, :, :]], y_train[:index, :], 24)
-accuracy = model.get_accuracy([X_train[:index, :, :, :]], y_train[:index])
+model.train([X_train], y_train, 24)
+accuracy = model.get_accuracy([X_train], y_train)
 print('Accuracy: {}%'.format(accuracy))
 test_accuracy = model.get_accuracy([X_test], y_test)
 print('Test accuracy: {}%'.format(test_accuracy))
