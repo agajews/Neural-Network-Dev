@@ -1,9 +1,10 @@
 from __future__ import print_function
-import Okapi.Core as ok
-from Okapi.Core import Model
-from Okapi import Activations
-from Okapi.Layers import FullyConnectedLayer, LSTMLayer, DropoutLayer, \
-    ActivationLayer
+import OkapiV2.Core as ok
+from OkapiV2.Core import Model, Branch
+from OkapiV2 import Activations
+from OkapiV2.Layers.Basic import FullyConnected, Dropout
+from OkapiV2.Layers.Activations import ActivationLayer
+from OkapiV2.Layers.Recurrent import LSTM
 import numpy as np
 import random
 import sys
@@ -38,14 +39,17 @@ for i, sentence in enumerate(sentences):
 
 # build the model: 2 stacked LSTM
 print('Build model...')
-model = Model()
-model.add(LSTMLayer((512, 1, 1, 1), return_sequences=True))
-model.add(DropoutLayer(0.2))
-model.add(LSTMLayer((512, 1, 1, 1), return_sequences=False))
-model.add(DropoutLayer(0.2))
-model.add(FullyConnectedLayer(len(chars)))
-model.add(ActivationLayer(Activations.softmax))
+tree = Branch()
+tree.add_layer(LSTM((512, 1, 1, 1), return_sequences=True))
+tree.add_layer(Dropout(0.2))
+tree.add_layer(LSTM((512, 1, 1, 1), return_sequences=False))
+tree.add_layer(Dropout(0.2))
+tree.add_layer(FullyConnected())
+tree.add_layer(ActivationLayer(Activations.softmax))
+tree.add_input(X)
 
+model = Model()
+model.set_tree(tree)
 
 def sample(a, temperature=1.0):
     # helper function to sample an index from a probability array
@@ -58,7 +62,7 @@ for iteration in range(1, 60):
     print()
     print('-' * 50)
     print('Iteration', iteration)
-    model.train(X, y, num_epochs=1)
+    model.train([X], y, num_epochs=1)
 
     start_index = random.randint(0, len(text) - maxlen - 1)
 
@@ -87,4 +91,4 @@ for iteration in range(1, 60):
             sys.stdout.write(next_char)
             sys.stdout.flush()
         print()
-    ok.save_model(model)
+    model.save_params('shakespeare_params_vec.pk')

@@ -166,7 +166,7 @@ class Model():
 
     def save_params(self, filename='okapi_params.pk'):
         file = open(filename, 'wb')
-        pickle.dump(self.params_shared, file, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(self.get_params_as_vec(), file, protocol=pickle.HIGHEST_PROTOCOL)
         file.close()
 
     def load_params(self, filename='okapi_params.pk'):
