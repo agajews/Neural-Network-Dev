@@ -1,5 +1,4 @@
 from __future__ import print_function
-import OkapiV2.Core as ok
 from OkapiV2.Core import Model, Branch
 from OkapiV2 import Activations
 from OkapiV2.Layers.Basic import FullyConnected, Dropout
@@ -81,7 +80,7 @@ for iteration in range(1, 60):
             for t, char in enumerate(sentence):
                 x[0, t, char_indices[char]] = 1.
 
-            preds = model.predict(x)[0]
+            preds = model.predict([x])[0]
             next_index = sample(preds, diversity)
             next_char = indices_char[next_index]
 
